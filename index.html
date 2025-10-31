@@ -1,431 +1,495 @@
-import React, { useState, useEffect } from 'react';
-
-// --- Konstanta untuk Pilihan Gaya ---
-const artStyleOptions = [
-  { value: 'Watercolor - Bright & Detailed', label: 'Watercolor - Cerah & Detail' },
-  { value: 'Watercolor - Vibrant & Whimsical', label: 'Watercolor - Berwarna & Unik' },
-  { value: 'Impressionistic Oil/Acrylic - Atmospheric & Warm', label: 'Impresionis - Atmosfer & Hangat' },
-];
-
-const colorPaletteOptions = [
-  { value: 'Warm & Earthy Tones with Vibrant Accents', label: 'Nada Hangat & Bumi dengan Aksen Cerah' },
-  { value: 'Bright & Contrasting Hues', label: 'Warna Cerah & Kontras' },
-  { value: 'Rich Sunset/Twilight Hues', label: 'Warna Senja/Malam Hari yang Kaya' },
-];
-
-const textureDetailOptions = [
-  { value: 'Soft Brushstrokes, Moderate Detail', label: 'Sapuan Kuas Halus, Detail Sedang' },
-  { value: 'Loose Brushwork, Simplified Details', label: 'Sapuan Kuas Bebas, Detail Sederhana' },
-  { value: 'Bold Color Blocks, Impressionistic Details', label: 'Blok Warna Berani, Detail Impresionis' },
-];
-
-const lightingMoodOptions = [
-  { value: 'Bright Daylight, Peaceful Atmosphere', label: 'Siang Hari Cerah, Suasana Tenang' },
-  { value: 'Sunny & Lively, Cheerful Mood', label: 'Cerah & Hidup, Suasana Ceria' },
-  { value: 'Golden Hour/Night Glow, Romantic/Melancholic Ambiance', label: 'Jam Emas/Cahaya Malam, Suasana Romantis' },
-];
-
-const backgroundOption = [
-  { value: 'original', label: 'Gunakan Latar Belakang Asli' },
-  { value: 'remove', label: 'Fokus pada Objek (Hapus Latar Belakang)' },
-];
-
-/**
- * Komponen SelectGroup untuk membuat dropdown pilihan
- */
-const SelectGroup = ({ label, id, value, onChange, options }) => (
-  <div className="w-full">
-    <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">
-      {label}
-    </label>
-    <select
-      id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-    >
-      <option value="">Pilih {label.toLowerCase()}...</option>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  </div>
-);
-
-/**
- * Komponen LoadingSpinner
- */
-const LoadingSpinner = () => (
-  <div className="flex flex-col items-center justify-center">
-    <svg className="animate-spin -ml-1 mr-3 h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-    <span className="mt-2 text-gray-600">Sedang memproses gambar Anda...</span>
-  </div>
-);
-
-/**
- * Fungsi helper untuk mengonversi Base64 ke Blob URL
- */
-const base64ToBlobUrl = (base64DataUrl) => {
-  try {
-    const base64 = base64DataUrl.split(',')[1];
-    if (!base64) throw new Error("Format Data URL tidak valid");
-
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'image/png' });
-    return URL.createObjectURL(blob);
-  } catch (e) {
-    console.error("Gagal mengonversi Base64 ke Blob URL:", e);
-    return null;
-  }
-};
-
-/**
- * Komponen utama Aplikasi
- */
-export default function App() {
-  const [uploadedImage, setUploadedImage] = useState(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState(null);
-  const [generatedImage, setGeneratedImage] = useState(null);
-  const [downloadUrl, setDownloadUrl] = useState(null); // <-- STATE BARU UNTUK LINK UNDUH
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // State untuk menyimpan pilihan pengguna
-  const [artStyle, setArtStyle] = useState('');
-  const [colorPalette, setColorPalette] = useState('');
-  const [textureDetail, setTextureDetail] = useState('');
-  const [lightingMood, setLightingMood] = useState('');
-  const [backgroundChoice, setBackgroundChoice] = useState('original'); // Default ke 'original'
-
-  // Membersihkan URL objek lama saat komponen unmount atau gambar berubah
-  useEffect(() => {
-    // Pastikan untuk membersihkan URL objek sebelumnya untuk menghindari kebocoran memori
-    const currentUploadedImageUrl = uploadedImageUrl;
-    const currentDownloadUrl = downloadUrl;
-    
-    return () => {
-      if (currentUploadedImageUrl) {
-        URL.revokeObjectURL(currentUploadedImageUrl);
-      }
-      if (currentDownloadUrl) {
-        URL.revokeObjectURL(currentDownloadUrl);
-      }
-    };
-  }, [uploadedImageUrl, downloadUrl]); // Tambahkan downloadUrl ke dependensi
-  
-  // Fungsi untuk membersihkan state unduhan sebelumnya
-  const cleanupOldDownload = () => {
-    if (downloadUrl) {
-      URL.revokeObjectURL(downloadUrl);
-      setDownloadUrl(null);
-    }
-    setGeneratedImage(null);
-  };
-
-  // Fungsi untuk menangani unggahan file
-  const handleImageUpload = (event) => {
-    const file = event.target.files[0];
-    if (file && file.type.startsWith('image/')) {
-      if (uploadedImageUrl) {
-        URL.revokeObjectURL(uploadedImageUrl);
-      }
-      cleanupOldDownload(); // Bersihkan unduhan lama
-      setError(null);
-      
-      setUploadedImage(file);
-      const newImageUrl = URL.createObjectURL(file);
-      setUploadedImageUrl(newImageUrl);
-    } else {
-      setError('Silakan unggah file gambar yang valid (JPG, PNG, WEBP).');
-      setUploadedImage(null);
-      setUploadedImageUrl(null);
-    }
-  };
-
-  // Fungsi untuk konversi File ke Base64
-  const convertFileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64Data = reader.result.split(',')[1];
-        resolve(base64Data);
-      };
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
-  // Fungsi untuk memanggil API dengan retry logic sederhana
-  const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const response = await fetch(url, options);
-        if (response.ok) {
-          return response.json();
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor Foto AI Artistik</title>
+    <!-- Memuat Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Menggunakan font Inter */
+        body {
+            font-family: 'Inter', sans-serif;
         }
-        if (response.status === 429 || response.status >= 500) {
-          console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying in ${delay}ms...`);
-          await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
-        } else {
-          const errorData = await response.json();
-          throw new Error(errorData.error?.message || `Error ${response.status}`);
+        /* Style untuk loader kustom */
+        .loader {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
         }
-      } catch (error) {
-        if (i === retries - 1) throw error;
-        console.warn(`Attempt ${i + 1} failed with error: ${error.message}. Retrying...`);
-        await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
-      }
-    }
-  };
-
-
-  // Fungsi untuk menghasilkan gambar
-  const handleGenerateImage = async () => {
-    if (!uploadedImage || !artStyle || !colorPalette || !textureDetail || !lightingMood || !backgroundChoice) {
-      setError('Harap unggah gambar dan lengkapi semua pilihan gaya.');
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    cleanupOldDownload(); // Bersihkan unduhan dan gambar lama
-
-    try {
-      const base64ImageData = await convertFileToBase64(uploadedImage);
-      const mimeType = uploadedImage.type;
-
-      let prompt = `
-        Ubah gambar yang diunggah ini menggunakan gaya berikut.
-        Gambar Asli: [disertakan]
-        Instruksi Gaya:
-        - Gaya Artistik: ${artStyle}
-        - Palet Warna: ${colorPalette}
-        - Tekstur & Detail: ${textureDetail}
-        - Pencahayaan & Suasana: ${lightingMood}
-      `;
-
-      if (backgroundChoice === 'remove') {
-        prompt += `
-        - Latar Belakang: Fokus pada objek utama. Hapus atau minimalkan latar belakang asli dan ganti dengan latar belakang netral atau sederhana yang sesuai dengan gaya artistik yang dipilih, atau jadikan transparan jika memungkinkan.
-        `;
-      } else {
-        prompt += `
-        - Latar Belakang: Pertahankan dan ubah latar belakang asli sesuai dengan gaya artistik yang dipilih.
-        `;
-      }
-      prompt += `
-        Hasilkan gambar baru berdasarkan gambar asli dan instruksi gaya ini.
-      `;
-
-      const apiKey = "";
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
-
-      const payload = {
-        contents: [{
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64ImageData
-              }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
             }
-          ]
-        }],
-        generationConfig: {
-          responseModalities: ["IMAGE"]
-        },
-      };
-
-      const result = await fetchWithRetry(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!result || !result.candidates || !result.candidates[0] || !result.candidates[0].content || !result.candidates[0].content.parts) {
-          let errorMessage = 'Respons AI tidak valid atau kosong.';
-          if (result && result.promptFeedback) {
-              errorMessage = `Gambar diblokir karena: ${result.promptFeedback.blockReason || 'Alasan tidak diketahui'}`;
-          } else if (result && result.candidates && result.candidates[0] && result.candidates[0].finishReason) {
-               errorMessage = `Proses dihentikan karena: ${result.candidates[0].finishReason}`;
-          }
-          console.error("Respons API tidak valid:", result);
-          setError(errorMessage);
-          setIsLoading(false); 
-          return;
-      }
-
-      const base64Data = result.candidates[0].content.parts.find(p => p.inlineData)?.inlineData?.data;
-
-      if (base64Data) {
-        const dataUrl = `data:image/png;base64,${base64Data}`;
-        setGeneratedImage(dataUrl);
-        // --- LOGIKA BARU ---
-        // Langsung buat Blob URL untuk diunduh
-        const blobUrl = base64ToBlobUrl(dataUrl);
-        if (blobUrl) {
-          setDownloadUrl(blobUrl);
-        } else {
-          setError("Gagal membuat link unduhan.");
         }
-        // --- AKHIR LOGIKA BARU ---
-      } else {
-        const textResponse = result.candidates[0].content.parts.find(p => p.text)?.text;
-        console.error("Tidak ada data gambar di respons:", result);
-        setError(`AI merespons dengan teks, bukan gambar: "${textResponse || 'Tidak ada data gambar.'}"`);
-      }
+    </style>
+    <!-- Memuat Google Font (Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-50 text-gray-900 p-4 md:p-8">
 
-    } catch (error) {
-      console.error('Error generating image:', error);
-      setError(`Terjadi kesalahan: ${error.message || 'Tidak dapat terhubung ke server.'}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const isGenerateButtonDisabled = !uploadedImage || !artStyle || !colorPalette || !textureDetail || !lightingMood || !backgroundChoice || isLoading;
-
-  return (
-    <div className="bg-gray-50 min-h-screen text-gray-900 font-sans p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* --- Header --- */}
-        <header className="text-center mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-blue-700">Editor Foto AI Artistik</h1>
-          <p className="text-lg text-gray-600 mt-2">Unggah fotomu dan ubah menjadi karya seni!</p>
+    <div class="max-w-7xl mx-auto">
+        <!-- --- Header --- -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-blue-700">Editor Foto AI Artistik</h1>
+            <p class="text-lg text-gray-600 mt-2">Unggah fotomu dan ubah menjadi karya seni!</p>
         </header>
 
-        <div className="md:grid md:grid-cols-2 md:gap-8">
-          {/* --- Kolom Kontrol (Kiri) --- */}
-          <div className="bg-white p-6 rounded-lg shadow-lg space-y-6 h-fit mb-8 md:mb-0">
-            {/* 1. Unggah Gambar */}
-            <div>
-              <label htmlFor="file-upload" className="w-full inline-block bg-green-600 text-white text-center font-semibold py-3 px-4 rounded-lg cursor-pointer hover:bg-green-700 transition-colors duration-300">
-                {uploadedImage ? `Gambar Dipilih: ${uploadedImage.name}` : '1. Unggah Gambar Anda'}
-              </label>
-              <input
-                id="file-upload"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleImageUpload}
-              />
-              <p className="text-xs text-gray-500 mt-2 text-center">Format yang didukung: JPG, PNG, WEBP</p>
-            </div>
-
-            {/* 2-6. Pilihan Gaya */}
-            <SelectGroup
-              label="2. Gaya Artistik"
-              id="art-style"
-              value={artStyle}
-              onChange={setArtStyle}
-              options={artStyleOptions}
-            />
-            <SelectGroup
-              label="3. Palet Warna"
-              id="color-palette"
-              value={colorPalette}
-              onChange={setColorPalette}
-              options={colorPaletteOptions}
-            />
-            <SelectGroup
-              label="4. Tekstur & Detail"
-              id="texture-detail"
-              value={textureDetail}
-              onChange={setTextureDetail}
-              options={textureDetailOptions}
-            />
-            <SelectGroup
-              label="5. Pencahayaan & Suasana"
-              id="lighting-mood"
-              value={lightingMood}
-              onChange={setLightingMood}
-              options={lightingMoodOptions}
-            />
-            <SelectGroup
-              label="6. Pilihan Latar Belakang"
-              id="background-choice"
-              value={backgroundChoice}
-              onChange={setBackgroundChoice}
-              options={backgroundOption}
-            />
-
-            {/* 7. Tombol Generate */}
-            <button
-              onClick={handleGenerateImage}
-              disabled={isGenerateButtonDisabled}
-              className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out
-                         hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
-                         disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none
-                         shadow-md hover:shadow-lg transform disabled:transform-none hover:-translate-y-0.5"
-            >
-              {isLoading ? 'Sedang Memproses...' : 'Hasilkan Karya Seni!'}
-            </button>
-            
-            {error && (
-              <div className="mt-4 p-3 bg-red-100 border border-red-300 text-red-800 rounded-md text-sm break-words">
-                <strong>Error:</strong> {error}
-              </div>
-            )}
-          </div>
-
-          {/* --- Kolom Tampilan Gambar (Kanan) --- */}
-          <div className="space-y-8">
-            {/* Pratinjau Gambar Asli */}
-            <div className="bg-white p-4 rounded-lg shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-700 mb-3">Gambar Asli</h3>
-              <div className="w-full min-h-[250px] md:min-h-[300px] bg-gray-100 rounded-md flex items-center justify-center border border-gray-200 overflow-hidden">
-                {uploadedImageUrl ? (
-                  <img src={uploadedImageUrl} alt="Pratinjau Unggahan" className="max-w-full h-auto max-h-[500px] object-contain rounded-md" />
-                ) : (
-                  <p className="text-gray-500">Pratinjau gambar akan muncul di sini</p>
-                )}
-              </div>
-            </div>
-
-            {/* Hasil Gambar AI */}
-            <div className="bg-white p-4 rounded-lg shadow-lg">
-              <h3 className="text-xl font-semibold text-gray-700 mb-3">Hasil Edit AI</h3>
-              <div className="w-full min-h-[250px] md:min-h-[300px] bg-gray-100 rounded-md flex items-center justify-center border border-gray-200 overflow-hidden">
-                {isLoading ? (
-                  <LoadingSpinner />
-                ) : generatedImage ? (
-                  <img src={generatedImage} alt="Hasil Edit AI" className="max-w-full h-auto max-h-[500px] object-contain rounded-md" />
-                ) : (
-                  <p className="text-gray-500 text-center p-4">Hasil editan AI akan muncul di sini setelah Anda menekan tombol 'Hasilkan'.</p>
-                )}
-              </div>
-              
-              {/* --- BAGIAN UNDUH YANG DIPERBAIKI --- */}
-              {/* Ini sekarang adalah tautan <a> yang diberi gaya seperti tombol.
-                Ini hanya muncul jika proses tidak loading DAN downloadUrl (state baru) sudah siap.
-              */}
-              {!isLoading && downloadUrl && (
-                <div className="mt-4 text-center">
-                  <a
-                    href={downloadUrl}
-                    download="edited-image.png"
-                    className="inline-block bg-purple-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
-                  >
-                    Unduh Gambar
-                  </a>
+        <div class="md:grid md:grid-cols-2 md:gap-8">
+            <!-- --- Kolom Kontrol (Kiri) --- -->
+            <div class="bg-white p-6 rounded-lg shadow-lg space-y-6 h-fit mb-8 md:mb-0">
+                <!-- 1. Unggah Gambar -->
+                <div>
+                    <label for="file-upload" class="w-full inline-block bg-green-600 text-white text-center font-semibold py-3 px-4 rounded-lg cursor-pointer hover:bg-green-700 transition-colors duration-300">
+                        <span id="file-upload-label">1. Unggah Gambar Anda</span>
+                    </label>
+                    <input
+                        id="file-upload"
+                        type="file"
+                        accept="image/*"
+                        class="hidden"
+                    />
+                    <p class="text-xs text-gray-500 mt-2 text-center">Format yang didukung: JPG, PNG, WEBP</p>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
+                <!-- 2-6. Pilihan Gaya -->
+                
+                <!-- 2. Gaya Artistik -->
+                <div class="w-full">
+                    <label for="art-style" class="block text-sm font-medium text-gray-700 mb-1">2. Gaya Artistik</label>
+                    <select id="art-style" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Pilih gaya artistik...</option>
+                        <option value="Watercolor - Bright & Detailed">Watercolor - Cerah & Detail</option>
+                        <option value="Watercolor - Vibrant & Whimsical">Watercolor - Berwarna & Unik</option>
+                        <option value="Impressionistic Oil/Acrylic - Atmospheric & Warm">Impresionis - Atmosfer & Hangat</option>
+                    </select>
+                </div>
+
+                <!-- 3. Palet Warna -->
+                <div class="w-full">
+                    <label for="color-palette" class="block text-sm font-medium text-gray-700 mb-1">3. Palet Warna</label>
+                    <select id="color-palette" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Pilih palet warna...</option>
+                        <option value="Warm & Earthy Tones with Vibrant Accents">Nada Hangat & Bumi dengan Aksen Cerah</option>
+                        <option value="Bright & Contrasting Hues">Warna Cerah & Kontras</option>
+                        <option value="Rich Sunset/Twilight Hues">Warna Senja/Malam Hari yang Kaya</option>
+                    </select>
+                </div>
+
+                <!-- 4. Tekstur & Detail -->
+                <div class="w-full">
+                    <label for="texture-detail" class="block text-sm font-medium text-gray-700 mb-1">4. Tekstur & Detail</label>
+                    <select id="texture-detail" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Pilih tekstur & detail...</option>
+                        <option value="Soft Brushstrokes, Moderate Detail">Sapuan Kuas Halus, Detail Sedang</option>
+                        <option value="Loose Brushwork, Simplified Details">Sapuan Kuas Bebas, Detail Sederhana</option>
+                        <option value="Bold Color Blocks, Impressionistic Details">Blok Warna Berani, Detail Impresionis</option>
+                    </select>
+                </div>
+
+                <!-- 5. Pencahayaan & Suasana -->
+                <div class="w-full">
+                    <label for="lighting-mood" class="block text-sm font-medium text-gray-700 mb-1">5. Pencahayaan & Suasana</label>
+                    <select id="lighting-mood" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Pilih pencahayaan & suasana...</option>
+                        <option value="Bright Daylight, Peaceful Atmosphere">Siang Hari Cerah, Suasana Tenang</option>
+                        <option value="Sunny & Lively, Cheerful Mood">Cerah & Hidup, Suasana Ceria</option>
+                        <option value="Golden Hour/Night Glow, Romantic/Melancholic Ambiance">Jam Emas/Cahaya Malam, Suasana Romantis</option>
+                    </select>
+                </div>
+
+                <!-- 6. Pilihan Latar Belakang -->
+                <div class="w-full">
+                    <label for="background-choice" class="block text-sm font-medium text-gray-700 mb-1">6. Pilihan Latar Belakang</label>
+                    <select id="background-choice" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="original">Gunakan Latar Belakang Asli</option>
+                        <option value="remove">Fokus pada Objek (Hapus Latar Belakang)</option>
+                    </select>
+                </div>
+
+                <!-- 7. Tombol Generate -->
+                <button
+                    id="generate-button"
+                    disabled
+                    class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 ease-in-out
+                           hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
+                           disabled:bg-gray-400 disabled:cursor-not-allowed disabled:shadow-none
+                           shadow-md hover:shadow-lg transform disabled:transform-none hover:-translate-y-0.5"
+                >
+                    Hasilkan Karya Seni!
+                </button>
+                
+                <!-- Error Message Container -->
+                <div id="error-container" class="hidden mt-4 p-3 bg-red-100 border border-red-300 text-red-800 rounded-md text-sm break-words">
+                    <strong>Error:</strong> <span id="error-message"></span>
+                </div>
+            </div>
+
+            <!-- --- Kolom Tampilan Gambar (Kanan) --- -->
+            <div class="space-y-8">
+                <!-- Pratinjau Gambar Asli -->
+                <div class="bg-white p-4 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-3">Gambar Asli</h3>
+                    <div id="original-image-container" class="w-full min-h-[250px] md:min-h-[300px] bg-gray-100 rounded-md flex items-center justify-center border border-gray-200 overflow-hidden">
+                        <img id="original-image-preview" src="" alt="Pratinjau Unggahan" class="hidden max-w-full h-auto max-h-[500px] object-contain rounded-md" />
+                        <p id="original-image-placeholder" class="text-gray-500">Pratinjau gambar akan muncul di sini</p>
+                    </div>
+                </div>
+
+                <!-- Hasil Gambar AI -->
+                <div class="bg-white p-4 rounded-lg shadow-lg">
+                    <h3 class="text-xl font-semibold text-gray-700 mb-3">Hasil Edit AI</h3>
+                    <div id="generated-image-container" class="w-full min-h-[250px] md:min-h-[300px] bg-gray-100 rounded-md flex items-center justify-center border border-gray-200 overflow-hidden">
+                        <!-- Loader -->
+                        <div id="loading-spinner" class="hidden flex flex-col items-center justify-center">
+                            <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="mt-2 text-gray-600">Sedang memproses gambar Anda...</span>
+                        </div>
+                        <img id="generated-image-preview" src="" alt="Hasil Edit AI" class="hidden max-w-full h-auto max-h-[500px] object-contain rounded-md" />
+                        <p id="generated-image-placeholder" class="text-gray-500 text-center p-4">Hasil editan AI akan muncul di sini setelah Anda menekan tombol 'Hasilkan'.</p>
+                    </div>
+                    
+                    <!-- Download Button -->
+                    <div id="download-container" class="mt-4 text-center hidden">
+                        <a
+                            id="download-link"
+                            href="#"
+                            download="edited-image.png"
+                            class="inline-block bg-purple-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                        >
+                            Unduh Gambar
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- State Variables ---
+        let uploadedImageFile = null;
+        let uploadedImageUrl = null;
+        let generatedImageDownloadUrl = null;
+        let isLoading = false;
+
+        // --- DOM Element References ---
+        const fileInput = document.getElementById('file-upload');
+        const fileInputLabel = document.getElementById('file-upload-label');
+        const generateButton = document.getElementById('generate-button');
+        const errorContainer = document.getElementById('error-container');
+        const errorMessage = document.getElementById('error-message');
+        
+        // Selects
+        const artStyleSelect = document.getElementById('art-style');
+        const colorPaletteSelect = document.getElementById('color-palette');
+        const textureDetailSelect = document.getElementById('texture-detail');
+        const lightingMoodSelect = document.getElementById('lighting-mood');
+        const backgroundChoiceSelect = document.getElementById('background-choice');
+        const allSelects = [artStyleSelect, colorPaletteSelect, textureDetailSelect, lightingMoodSelect, backgroundChoiceSelect];
+
+        // Original Image Preview
+        const originalImageContainer = document.getElementById('original-image-container');
+        const originalImagePreview = document.getElementById('original-image-preview');
+        const originalImagePlaceholder = document.getElementById('original-image-placeholder');
+
+        // Generated Image Preview
+        const generatedImageContainer = document.getElementById('generated-image-container');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const generatedImagePreview = document.getElementById('generated-image-preview');
+        const generatedImagePlaceholder = document.getElementById('generated-image-placeholder');
+        
+        // Download
+        const downloadContainer = document.getElementById('download-container');
+        const downloadLink = document.getElementById('download-link');
+
+        // --- Helper Functions ---
+
+        /**
+         * Converts a Base64 data URL to a Blob URL for downloading.
+         */
+        const base64ToBlobUrl = (base64DataUrl) => {
+            try {
+                const base64 = base64DataUrl.split(',')[1];
+                if (!base64) throw new Error("Format Data URL tidak valid");
+
+                const byteCharacters = atob(base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: 'image/png' });
+                return URL.createObjectURL(blob);
+            } catch (e) {
+                console.error("Gagal mengonversi Base64 ke Blob URL:", e);
+                return null;
+            }
+        };
+
+        /**
+         * Converts a File object to a Base64 string.
+         */
+        const convertFileToBase64 = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    const base64Data = reader.result.split(',')[1];
+                    resolve(base64Data);
+                };
+                reader.onerror = (error) => reject(error);
+            });
+        };
+
+        /**
+         * Fetches from the API with a simple retry mechanism.
+         */
+        const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    if (response.status === 429 || response.status >= 500) {
+                        console.warn(`Attempt ${i + 1} failed with status ${response.status}. Retrying in ${delay}ms...`);
+                        await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
+                    } else {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error?.message || `Error ${response.status}`);
+                    }
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    console.warn(`Attempt ${i + 1} failed with error: ${error.message}. Retrying...`);
+                    await new Promise(res => setTimeout(res, delay * Math.pow(2, i)));
+                }
+            }
+        };
+
+        /**
+         * Shows or hides the error message.
+         */
+        const setErrorMessage = (message) => {
+            if (message) {
+                errorMessage.textContent = message;
+                errorContainer.classList.remove('hidden');
+            } else {
+                errorContainer.classList.add('hidden');
+            }
+        };
+
+        /**
+         * Cleans up old object URLs to prevent memory leaks.
+         */
+        const cleanupOldUrls = () => {
+            if (uploadedImageUrl) {
+                URL.revokeObjectURL(uploadedImageUrl);
+                uploadedImageUrl = null;
+            }
+            if (generatedImageDownloadUrl) {
+                URL.revokeObjectURL(generatedImageDownloadUrl);
+                generatedImageDownloadUrl = null;
+            }
+        };
+
+        /**
+         * Updates the UI to show the loading state.
+         */
+        const setLoadingState = (isLoading) => {
+            if (isLoading) {
+                loadingSpinner.classList.remove('hidden');
+                generatedImagePlaceholder.classList.add('hidden');
+                generatedImagePreview.classList.add('hidden');
+                generateButton.textContent = 'Sedang Memproses...';
+            } else {
+                loadingSpinner.classList.add('hidden');
+                generateButton.textContent = 'Hasilkan Karya Seni!';
+            }
+            updateButtonState(); // Disables/enables button
+        };
+
+        /**
+         * Checks if all inputs are valid and updates the generate button's disabled state.
+         */
+        const updateButtonState = () => {
+            const allSelectsFilled = allSelects.every(select => select.value !== '');
+            const isReady = uploadedImageFile && allSelectsFilled && !isLoading;
+            generateButton.disabled = !isReady;
+        };
+
+        // --- Event Handlers ---
+
+        /**
+         * Handles the file input change event.
+         */
+        const handleImageUpload = (event) => {
+            const file = event.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                cleanupOldUrls();
+                setErrorMessage(null);
+                
+                uploadedImageFile = file;
+                uploadedImageUrl = URL.createObjectURL(file);
+                
+                originalImagePreview.src = uploadedImageUrl;
+                originalImagePreview.classList.remove('hidden');
+                originalImagePlaceholder.classList.add('hidden');
+                fileInputLabel.textContent = `Gambar Dipilih: ${file.name}`;
+
+                // Clear previous generation
+                generatedImagePreview.classList.add('hidden');
+                generatedImagePreview.src = '';
+                generatedImagePlaceholder.classList.remove('hidden');
+                downloadContainer.classList.add('hidden');
+
+            } else {
+                setErrorMessage('Silakan unggah file gambar yang valid (JPG, PNG, WEBP).');
+                uploadedImageFile = null;
+                fileInputLabel.textContent = '1. Unggah Gambar Anda';
+            }
+            updateButtonState();
+        };
+
+        /**
+         * Handles the generate button click event.
+         */
+        const handleGenerateImage = async () => {
+            const artStyle = artStyleSelect.value;
+            const colorPalette = colorPaletteSelect.value;
+            const textureDetail = textureDetailSelect.value;
+            const lightingMood = lightingMoodSelect.value;
+            const backgroundChoice = backgroundChoiceSelect.value;
+            
+            if (!uploadedImageFile || !artStyle || !colorPalette || !textureDetail || !lightingMood || !backgroundChoice) {
+                setErrorMessage('Harap unggah gambar dan lengkapi semua pilihan gaya.');
+                return;
+            }
+
+            isLoading = true;
+            setLoadingState(true);
+            setErrorMessage(null);
+            
+            // Clean up old generated image and download link
+            if (generatedImageDownloadUrl) {
+                URL.revokeObjectURL(generatedImageDownloadUrl);
+                generatedImageDownloadUrl = null;
+            }
+            downloadContainer.classList.add('hidden');
+            generatedImagePreview.classList.add('hidden');
+
+            try {
+                const base64ImageData = await convertFileToBase64(uploadedImageFile);
+                const mimeType = uploadedImageFile.type;
+
+                let prompt = `
+                    Ubah gambar yang diunggah ini menggunakan gaya berikut.
+                    Gambar Asli: [disertakan]
+                    Instruksi Gaya:
+                    - Gaya Artistik: ${artStyle}
+                    - Palet Warna: ${colorPalette}
+                    - Tekstur & Detail: ${textureDetail}
+                    - Pencahayaan & Suasana: ${lightingMood}
+                `;
+
+                if (backgroundChoice === 'remove') {
+                    prompt += `
+                    - Latar Belakang: Fokus pada objek utama. Hapus atau minimalkan latar belakang asli dan ganti dengan latar belakang netral atau sederhana yang sesuai dengan gaya artistik yang dipilih, atau jadikan transparan jika memungkinkan.
+                    `;
+                } else {
+                    prompt += `
+                    - Latar Belakang: Pertahankan dan ubah latar belakang asli sesuai dengan gaya artistik yang dipilih.
+                    `;
+                }
+                prompt += `
+                    Hasilkan gambar baru berdasarkan gambar asli dan instruksi gaya ini.
+                `;
+
+                const apiKey = ""; // API key will be injected
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64ImageData
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        responseModalities: ["IMAGE"]
+                    },
+                };
+
+                const result = await fetchWithRetry(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!result || !result.candidates || !result.candidates[0] || !result.candidates[0].content || !result.candidates[0].content.parts) {
+                    let err = 'Respons AI tidak valid atau kosong.';
+                    if (result && result.promptFeedback) {
+                        err = `Gambar diblokir karena: ${result.promptFeedback.blockReason || 'Alasan tidak diketahui'}`;
+                    } else if (result && result.candidates && result.candidates[0] && result.candidates[0].finishReason) {
+                        err = `Proses dihentikan karena: ${result.candidates[0].finishReason}`;
+                    }
+                    console.error("Respons API tidak valid:", result);
+                    setErrorMessage(err);
+                    isLoading = false;
+                    setLoadingState(false);
+                    return;
+                }
+
+                const base64Data = result.candidates[0].content.parts.find(p => p.inlineData)?.inlineData?.data;
+
+                if (base64Data) {
+                    const dataUrl = `data:image/png;base64,${base64Data}`;
+                    generatedImagePreview.src = dataUrl;
+                    generatedImagePreview.classList.remove('hidden');
+                    generatedImagePlaceholder.classList.add('hidden');
+
+                    // Create blob URL for download
+                    generatedImageDownloadUrl = base64ToBlobUrl(dataUrl);
+                    if (generatedImageDownloadUrl) {
+                        downloadLink.href = generatedImageDownloadUrl;
+                        downloadContainer.classList.remove('hidden');
+                    } else {
+                        setErrorMessage("Gagal membuat link unduhan.");
+                    }
+                } else {
+                    const textResponse = result.candidates[0].content.parts.find(p => p.text)?.text;
+                    console.error("Tidak ada data gambar di respons:", result);
+                    setErrorMessage(`AI merespons dengan teks, bukan gambar: "${textResponse || 'Tidak ada data gambar.'}"`);
+                    generatedImagePlaceholder.classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error('Error generating image:', error);
+                setErrorMessage(`Terjadi kesalahan: ${error.message || 'Tidak dapat terhubung ke server.'}`);
+                generatedImagePlaceholder.classList.remove('hidden');
+            } finally {
+                isLoading = false;
+                setLoadingState(false);
+            }
+        };
+
+        // --- Attach Event Listeners ---
+        fileInput.addEventListener('change', handleImageUpload);
+        generateButton.addEventListener('click', handleGenerateImage);
+        allSelects.forEach(select => {
+            select.addEventListener('change', updateButtonState);
+        });
+
+        // Initial check
+        updateButtonState();
+    </script>
+</body>
+</html>
